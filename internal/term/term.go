@@ -1,4 +1,4 @@
-package main
+package term
 
 import (
 	"bufio"
@@ -11,7 +11,11 @@ import (
 
 var stdinReader = bufio.NewReader(os.Stdin)
 
-func readWithPrefill(prompt, prefill string) string {
+func IsInteractive() bool {
+	return term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd()))
+}
+
+func ReadWithPrefill(prompt, prefill string) string {
 	fd := int(os.Stdin.Fd())
 	oldState, err := term.MakeRaw(fd)
 	if err != nil {
@@ -66,7 +70,28 @@ func openTTY() *os.File {
 	return f
 }
 
-func readPassword(prompt string) string {
+func confirmYN(question string) bool {
+	tty := openTTY()
+	if tty == nil {
+		fmt.Print(question + " [y/N]: ")
+		line, _ := stdinReader.ReadString('\n')
+		return strings.EqualFold(strings.TrimSpace(line), "y")
+	}
+	defer tty.Close()
+	fmt.Fprint(tty, question+" [y/N]: ")
+	reader := bufio.NewReader(tty)
+	line, _ := reader.ReadString('\n')
+	return strings.EqualFold(strings.TrimSpace(line), "y")
+}
+
+func Confirm(question string, assumeYes bool) bool {
+	if assumeYes {
+		return true
+	}
+	return confirmYN(question)
+}
+
+func ReadPassword(prompt string) string {
 	if v := os.Getenv("SECRETS_PASSWORD"); v != "" {
 		return v
 	}

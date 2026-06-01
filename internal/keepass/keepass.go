@@ -1,4 +1,4 @@
-package main
+package keepass
 
 import (
 	"encoding/xml"
@@ -8,37 +8,37 @@ import (
 	"strings"
 )
 
-type KPFile struct {
+type kpFile struct {
 	XMLName xml.Name `xml:"KeePassFile"`
-	Root    KPRoot   `xml:"Root"`
+	Root    kpRoot   `xml:"Root"`
 }
 
-type KPRoot struct {
-	Group KPGroup `xml:"Group"`
+type kpRoot struct {
+	Group kpGroup `xml:"Group"`
 }
 
-type KPGroup struct {
-	Name    string    `xml:"Name"`
-	Groups  []KPGroup `xml:"Group"`
-	Entries []KPEntry `xml:"Entry"`
+type kpGroup struct {
+	Name    string       `xml:"Name"`
+	Groups  []kpGroup    `xml:"Group"`
+	Entries []kpXMLEntry `xml:"Entry"`
 }
 
-type KPEntry struct {
-	Strings []KPString `xml:"String"`
+type kpXMLEntry struct {
+	Strings []kpString `xml:"String"`
 }
 
-type KPString struct {
+type kpString struct {
 	Key   string `xml:"Key"`
 	Value string `xml:"Value"`
 }
 
-type kpEntry struct {
-	path  string
-	title string
-	value string
+type Entry struct {
+	Path  string
+	Title string
+	Value string
 }
 
-func checkEngine() {
+func CheckEngine() {
 	if _, err := exec.LookPath("keepassxc-cli"); err != nil {
 		fmt.Fprintln(os.Stderr, "keepassxc-cli not found in PATH.")
 		fmt.Fprintln(os.Stderr, "Install it:")
@@ -49,22 +49,22 @@ func checkEngine() {
 	}
 }
 
-func runKP(stdinData string, args ...string) (string, error) {
+func Run(stdinData string, args ...string) (string, error) {
 	cmd := exec.Command("keepassxc-cli", args...)
 	cmd.Stdin = strings.NewReader(stdinData)
 	out, err := cmd.Output()
 	return string(out), err
 }
 
-func parseSecrets(xmlData string) ([]kpEntry, error) {
-	var kpf KPFile
+func ParseSecrets(xmlData string) ([]Entry, error) {
+	var kpf kpFile
 	if err := xml.Unmarshal([]byte(xmlData), &kpf); err != nil {
 		return nil, err
 	}
 
-	var out []kpEntry
-	var walk func(g KPGroup, prefix []string, depth int)
-	walk = func(g KPGroup, prefix []string, depth int) {
+	var out []Entry
+	var walk func(g kpGroup, prefix []string, depth int)
+	walk = func(g kpGroup, prefix []string, depth int) {
 		cur := prefix
 		if depth > 0 {
 			cur = append(append([]string{}, prefix...), g.Name)
@@ -86,7 +86,7 @@ func parseSecrets(xmlData string) ([]kpEntry, error) {
 			if len(cur) > 0 {
 				path = strings.Join(append(append([]string{}, cur...), title), "/")
 			}
-			out = append(out, kpEntry{path: path, title: title, value: password})
+			out = append(out, Entry{Path: path, Title: title, Value: password})
 		}
 		for _, child := range g.Groups {
 			walk(child, cur, depth+1)
@@ -96,11 +96,11 @@ func parseSecrets(xmlData string) ([]kpEntry, error) {
 	return out, nil
 }
 
-func lookupSecret(entries []kpEntry, name string) (string, error) {
+func LookupSecret(entries []Entry, name string) (string, error) {
 	byPath := strings.Contains(name, "/")
-	var matches []kpEntry
+	var matches []Entry
 	for _, e := range entries {
-		if (byPath && e.path == name) || (!byPath && e.title == name) {
+		if (byPath && e.Path == name) || (!byPath && e.Title == name) {
 			matches = append(matches, e)
 		}
 	}
@@ -108,11 +108,11 @@ func lookupSecret(entries []kpEntry, name string) (string, error) {
 	case 0:
 		return "", fmt.Errorf("secret %q not found in key-store", name)
 	case 1:
-		return matches[0].value, nil
+		return matches[0].Value, nil
 	default:
 		var paths []string
 		for _, m := range matches {
-			paths = append(paths, m.path)
+			paths = append(paths, m.Path)
 		}
 		return "", fmt.Errorf("secret %q is ambiguous, matches: %s (use full Group/Title path)", name, strings.Join(paths, ", "))
 	}

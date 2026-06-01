@@ -1,4 +1,4 @@
-package main
+package cmd
 
 import (
 	"fmt"
@@ -9,6 +9,7 @@ type runFlags struct {
 	configPath string
 	keyStore   string
 	secrets    map[string]string
+	dryRun     bool
 }
 
 func splitArgs(args []string) (left, child []string, hasSep bool) {
@@ -62,6 +63,8 @@ func parseRunFlags(args []string) (runFlags, error) {
 			if err := mergeSecretsFlag(f.secrets, strings.TrimPrefix(a, "--secrets=")); err != nil {
 				return f, err
 			}
+		case a == "--dry-run":
+			f.dryRun = true
 		default:
 			return f, fmt.Errorf("unknown flag: %s", a)
 		}

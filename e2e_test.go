@@ -12,6 +12,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"secrets/internal/config"
+	"secrets/internal/keepass"
 )
 
 const testPassword = "test-pass-123"
@@ -101,16 +104,16 @@ func (s *sandbox) makeStore(rel string, entries map[string]string) string {
 	if err := os.WriteFile(xmlPath, []byte(buildTestXML(entries)), 0600); err != nil {
 		s.t.Fatal(err)
 	}
-	out, err := runKP(testPassword+"\n"+testPassword+"\n", "import", "-q", "-p", xmlPath, dbPath)
+	out, err := keepass.Run(testPassword+"\n"+testPassword+"\n", "import", "-q", "-p", xmlPath, dbPath)
 	if err != nil {
 		s.t.Fatalf("keepassxc-cli import failed: %v\n%s", err, out)
 	}
 	return dbPath
 }
 
-func (s *sandbox) writeConfig(cfg Config) {
+func (s *sandbox) writeConfig(sections map[string]config.Section) {
 	s.t.Helper()
-	data, _ := json.MarshalIndent(cfg, "", "  ")
+	data, _ := json.MarshalIndent(config.Config{Sections: sections}, "", "  ")
 	path := filepath.Join(s.home, ".config", "secrets", "default")
 	if err := os.WriteFile(path, data, 0600); err != nil {
 		s.t.Fatal(err)
@@ -149,7 +152,7 @@ func (s *sandbox) run(args ...string) cmdResult {
 func TestE2E_InjectSecret(t *testing.T) {
 	sb := newSandbox(t)
 	store := sb.makeStore("store.kdbx", map[string]string{"GITHUB_TOKEN": "ghp_secret"})
-	sb.writeConfig(Config{
+	sb.writeConfig(map[string]config.Section{
 		"default": {KeyStore: store, Secrets: map[string]string{"GITHUB_TOKEN": "GH_TOKEN"}},
 	})
 
@@ -168,7 +171,7 @@ func TestE2E_MergeDefaultAndToolSection(t *testing.T) {
 		"GITHUB_TOKEN": "ghp_secret",
 		"API_KEY":      "api_secret",
 	})
-	sb.writeConfig(Config{
+	sb.writeConfig(map[string]config.Section{
 		"default": {KeyStore: store, Secrets: map[string]string{"GITHUB_TOKEN": "GH_TOKEN"}},
 		"sh":      {Secrets: map[string]string{"API_KEY": "API_KEY"}},
 	})
@@ -198,7 +201,7 @@ func TestE2E_FlagsOverrideConfig(t *testing.T) {
 func TestE2E_MissingSecret(t *testing.T) {
 	sb := newSandbox(t)
 	store := sb.makeStore("store.kdbx", map[string]string{"GITHUB_TOKEN": "ghp_secret"})
-	sb.writeConfig(Config{
+	sb.writeConfig(map[string]config.Section{
 		"default": {KeyStore: store, Secrets: map[string]string{"NOPE": "NOPE_ENV"}},
 	})
 
@@ -217,7 +220,7 @@ func TestE2E_MissingSecret(t *testing.T) {
 func TestE2E_ExitCodePropagation(t *testing.T) {
 	sb := newSandbox(t)
 	store := sb.makeStore("store.kdbx", map[string]string{"TOKEN": "secret"})
-	sb.writeConfig(Config{
+	sb.writeConfig(map[string]config.Section{
 		"default": {KeyStore: store, Secrets: map[string]string{"TOKEN": "TOKEN"}},
 	})
 
@@ -227,10 +230,156 @@ func TestE2E_ExitCodePropagation(t *testing.T) {
 	}
 }
 
+func (s *sandbox) runNoPassword(args ...string) cmdResult {
+	s.t.Helper()
+	cmd := exec.Command(binaryPath, args...)
+	cmd.Dir = s.dir
+	cmd.Env = append(os.Environ(), "HOME="+s.home)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	code := 0
+	if ee, ok := err.(*exec.ExitError); ok {
+		code = ee.ExitCode()
+	}
+	return cmdResult{stdout: stdout.String(), stderr: stderr.String(), exitCode: code}
+}
+
+func TestE2E_DryRun(t *testing.T) {
+	sb := newSandbox(t)
+	sb.writeConfig(map[string]config.Section{
+		"default": {KeyStore: "~/missing-store.kdbx", Secrets: map[string]string{"GITHUB_TOKEN": "GH_TOKEN"}},
+		"sh":      {Secrets: map[string]string{"API_KEY": "API_KEY"}},
+	})
+
+	r := sb.runNoPassword("--dry-run", "--", "sh", "-c", "echo MARKER_EXECUTED")
+	if r.exitCode != 0 {
+		t.Fatalf("dry-run exit %d\nstderr:\n%s", r.exitCode, r.stderr)
+	}
+	if n := strings.Count(r.stdout, "MARKER_EXECUTED"); n != 1 {
+		t.Errorf("marker appears %d times (want 1 — only in the plan); command was executed:\n%s", n, r.stdout)
+	}
+	for _, want := range []string{
+		"Dry run",
+		`"sh" (merged over "default")`,
+		"← GITHUB_TOKEN",
+		"← API_KEY",
+		"GH_TOKEN=<secret from GITHUB_TOKEN>",
+		"API_KEY=<secret from API_KEY>",
+	} {
+		if !strings.Contains(r.stdout, want) {
+			t.Errorf("dry-run output missing %q:\n%s", want, r.stdout)
+		}
+	}
+}
+
+func (s *sandbox) storeTitles(dbPath string) map[string]bool {
+	s.t.Helper()
+	out, err := keepass.Run(testPassword+"\n", "export", "-q", "-f", "xml", dbPath)
+	if err != nil {
+		s.t.Fatalf("export %s failed: %v\n%s", dbPath, err, out)
+	}
+	entries, err := keepass.ParseSecrets(out)
+	if err != nil {
+		s.t.Fatal(err)
+	}
+	titles := map[string]bool{}
+	for _, e := range entries {
+		titles[e.Title] = true
+	}
+	return titles
+}
+
+func TestE2E_CheckAddsMissingSecrets(t *testing.T) {
+	sb := newSandbox(t)
+	store := sb.makeStore("store.kdbx", map[string]string{"GITHUB_TOKEN": "ghp_secret"})
+	sb.writeConfig(map[string]config.Section{
+		"default": {KeyStore: store, Secrets: map[string]string{
+			"GITHUB_TOKEN": "GH_TOKEN",
+			"NPM_TOKEN":    "NPM_TOKEN",
+		}},
+	})
+
+	r := sb.run("check", "-y")
+	if r.exitCode != 0 {
+		t.Fatalf("check exit %d\nstderr:\n%s", r.exitCode, r.stderr)
+	}
+	if !strings.Contains(r.stdout, "NPM_TOKEN") {
+		t.Errorf("check did not report missing NPM_TOKEN:\n%s", r.stdout)
+	}
+
+	titles := sb.storeTitles(store)
+	if !titles["NPM_TOKEN"] || !titles["GITHUB_TOKEN"] {
+		t.Errorf("NPM_TOKEN not added to store, titles=%v", titles)
+	}
+}
+
+func TestE2E_CheckAllPresent(t *testing.T) {
+	sb := newSandbox(t)
+	store := sb.makeStore("store.kdbx", map[string]string{"TOKEN": "v"})
+	sb.writeConfig(map[string]config.Section{
+		"default": {KeyStore: store, Secrets: map[string]string{"TOKEN": "TOKEN"}},
+	})
+
+	r := sb.run("check", "-y")
+	if r.exitCode != 0 {
+		t.Fatalf("check exit %d\nstderr:\n%s", r.exitCode, r.stderr)
+	}
+	if !strings.Contains(r.stdout, "All secrets are present") {
+		t.Errorf("expected all-present message:\n%s", r.stdout)
+	}
+}
+
+func TestE2E_ConfigCreatesStoreAndSecrets(t *testing.T) {
+	sb := newSandbox(t)
+	store := filepath.Join(sb.home, "new", "store.kdbx")
+	cfgPath := filepath.Join(sb.home, ".config", "secrets", "default")
+
+	stdin := store + "\n" + "GITHUB_TOKEN:GH_TOKEN,API_KEY:API_KEY\n"
+	r := sb.runStdin(stdin, "config", "-y", "--config", cfgPath)
+	if r.exitCode != 0 {
+		t.Fatalf("config exit %d\nstdout:\n%s\nstderr:\n%s", r.exitCode, r.stdout, r.stderr)
+	}
+
+	if _, err := os.Stat(store); err != nil {
+		t.Fatalf("store not created: %v", err)
+	}
+	titles := sb.storeTitles(store)
+	if !titles["GITHUB_TOKEN"] || !titles["API_KEY"] {
+		t.Errorf("created store missing secrets, titles=%v", titles)
+	}
+
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Sections["default"].KeyStore != store {
+		t.Errorf("config key-store: got %q, want %q", cfg.Sections["default"].KeyStore, store)
+	}
+}
+
+func (s *sandbox) runStdin(stdin string, args ...string) cmdResult {
+	s.t.Helper()
+	cmd := exec.Command(binaryPath, args...)
+	cmd.Dir = s.dir
+	cmd.Env = append(os.Environ(), "HOME="+s.home, "SECRETS_PASSWORD="+testPassword)
+	cmd.Stdin = strings.NewReader(stdin)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	code := 0
+	if ee, ok := err.(*exec.ExitError); ok {
+		code = ee.ExitCode()
+	}
+	return cmdResult{stdout: stdout.String(), stderr: stderr.String(), exitCode: code}
+}
+
 func TestE2E_WrongPassword(t *testing.T) {
 	sb := newSandbox(t)
 	store := sb.makeStore("store.kdbx", map[string]string{"TOKEN": "secret"})
-	sb.writeConfig(Config{
+	sb.writeConfig(map[string]config.Section{
 		"default": {KeyStore: store, Secrets: map[string]string{"TOKEN": "TOKEN"}},
 	})
 

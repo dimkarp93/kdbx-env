@@ -1,4 +1,4 @@
-package main
+package cmd
 
 import (
 	"fmt"
@@ -6,7 +6,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
-	"strings"
+
+	"secrets/internal/config"
+	"secrets/internal/domain"
+	"secrets/internal/keepass"
+	"secrets/internal/keyring"
 )
 
 func cmdRun(flags runFlags, child []string) int {
@@ -14,14 +18,16 @@ func cmdRun(flags runFlags, child []string) int {
 		fmt.Fprintln(os.Stderr, "no command specified after --")
 		return 2
 	}
-	checkEngine()
+	if !flags.dryRun {
+		keepass.CheckEngine()
+	}
 
 	cfgPath := flags.configPath
 	if cfgPath == "" {
-		cfgPath = defaultConfigPath()
+		cfgPath = config.DefaultPath()
 	}
-	cfg := Config{}
-	if c, err := loadConfig(cfgPath); err == nil {
+	cfg := config.Config{}
+	if c, err := config.Load(cfgPath); err == nil {
 		cfg = c
 	} else if !os.IsNotExist(err) {
 		fmt.Fprintln(os.Stderr, err)
@@ -29,46 +35,43 @@ func cmdRun(flags runFlags, child []string) int {
 	}
 
 	tool := filepath.Base(child[0])
-	res := resolve(cfg, tool, flags)
+	res := domain.Resolve(cfg, tool, flags.keyStore, flags.secrets)
 
-	if res.keyStore == "" {
+	if flags.dryRun {
+		printPlan(cfgPath, tool, cfg, res, flags, child)
+		return 0
+	}
+
+	if res.KeyStore == "" {
 		fmt.Fprintln(os.Stderr, "no key-store configured: set it in", cfgPath, "or pass --key-store")
 		return 1
 	}
-	if len(res.secrets) == 0 {
+	if len(res.Secrets) == 0 {
 		fmt.Fprintf(os.Stderr, "no secrets configured for %q in %s (or via --secrets)\n", tool, cfgPath)
 		return 1
 	}
 
-	keyStore := expandHome(res.keyStore)
+	keyStore := config.ExpandHome(res.KeyStore)
 	if _, err := os.Stat(keyStore); err != nil {
 		fmt.Fprintln(os.Stderr, "key-store not found:", keyStore)
 		return 1
 	}
 
-	pass := readPassword(fmt.Sprintf("Enter password for %s to run %s: ", keyStore, tool))
-	if pass == "" {
-		fmt.Fprintln(os.Stderr, "password cannot be empty")
-		return 1
-	}
-
-	out, err := runKP(pass+"\n", "export", "-q", "-f", "xml", keyStore)
+	prompt := fmt.Sprintf("Enter password for %s to run %s: ", keyStore, tool)
+	out, _, err := domain.UnlockExport(keyStore, keyring.New(cfg.Cache), prompt)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "keepassxc-cli export error:", err)
-		if msg := strings.TrimSpace(out); msg != "" {
-			fmt.Fprintln(os.Stderr, msg)
-		}
+		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 
-	entries, err := parseSecrets(out)
+	entries, err := keepass.ParseSecrets(out)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "cannot parse key-store:", err)
 		return 1
 	}
 
-	names := make([]string, 0, len(res.secrets))
-	for n := range res.secrets {
+	names := make([]string, 0, len(res.Secrets))
+	for n := range res.Secrets {
 		names = append(names, n)
 	}
 	sort.Strings(names)
@@ -76,12 +79,12 @@ func cmdRun(flags runFlags, child []string) int {
 	env := os.Environ()
 	var failures []string
 	for _, name := range names {
-		val, err := lookupSecret(entries, name)
+		val, err := keepass.LookupSecret(entries, name)
 		if err != nil {
 			failures = append(failures, err.Error())
 			continue
 		}
-		env = append(env, res.secrets[name]+"="+val)
+		env = append(env, res.Secrets[name]+"="+val)
 	}
 	if len(failures) > 0 {
 		fmt.Fprintln(os.Stderr, "cannot resolve secrets:")

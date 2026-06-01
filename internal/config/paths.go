@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"os"
@@ -6,7 +6,13 @@ import (
 	"strings"
 )
 
-func expandHome(p string) string {
+func ExpandHome(p string) string {
+	if p == "~" {
+		if home, err := os.UserHomeDir(); err == nil {
+			return home
+		}
+		return p
+	}
 	if strings.HasPrefix(p, "~/") {
 		home, err := os.UserHomeDir()
 		if err != nil {
@@ -17,7 +23,7 @@ func expandHome(p string) string {
 	return p
 }
 
-func defaultConfigPath() string {
+func DefaultPath() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".config", "secrets", "default")
 }

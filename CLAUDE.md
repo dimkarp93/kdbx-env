@@ -15,24 +15,45 @@
 `secrets` — обёртка, запускающая команду с секретами из `.kdbx`-хранилища, подставленными в окружение. Секреты не попадают в историю shell и не лежат на диске в plaintext. Чтение `.kdbx` — через внешнюю `keepassxc-cli` (своего крипто нет).
 
 ```
-secrets [--config <path>] [--key-store <path>] [--secrets=name:env,...] -- <cmd> [args...]
-secrets config [--config <path>]
+secrets [--config <path>] [--key-store <path>] [--secrets=name:env,...] [--dry-run] -- <cmd> [args...]
+secrets config  [--config <path>] [-y]
+secrets check   [--config <path>] [-y]
+secrets show    [--config <path>]
+secrets forget  [--config <path>]
 ```
+
+`--dry-run` печатает разрешённый план (конфиг, секция, маппинги, итоговая команда с плейсхолдерами `<secret from Title>`) и завершается, не читая хранилище и не запрашивая пароль.
+
+`config` после сохранения и `check` сверяют наличие `Title` в `.kdbx` (через `keepassxc-cli export`) и предлагают создать отсутствующий файл/записи (`-y` — без подтверждений). `check` агрегирует требуемые `Title` по файлам через `resolve` по всем секциям.
+
+## Конфиг и кэш
+
+Схема конфига — struct `Config{ Sections map[string]Section json:"sections"; Cache *CacheConfig json:"cached,omitempty" }`. `config.Load` читает только эту схему (программа в разработке, обратной совместимости со старыми форматами нет).
+
+Кэш пароля (`internal/keyring`): opt-in только через `cached`-секцию (`enabled`, `ttl`); никаких флагов/env. Хранит master-пароль `.kdbx` в OS-keyring через `github.com/zalando/go-keyring`. `domain.UnlockExport` — единая точка «достать пароль (кэш→prompt) + export»; `keyring.New(cfg.Cache)` строит политику. `secrets forget` (`cmdForget`) чистит keyring для всех `.kdbx` конфига. keyring-обёртки (`keyringSet/Get/Delete`) — var'ы, стабятся в тестах. Деградирует без Secret Service (miss + warning, не падает).
 
 ## Структура
 
-- `main.go` — разбор argv, диспетчеризация (`config`, `version`, run-режим).
-- `args.go` — `splitArgs` (по `--`), `parseRunFlags`, `mergeSecretsFlag`.
-- `config.go` — `Config`/`Section` (JSON), `loadConfig`/`saveConfig`, `resolve` (слияние `default` → секция тулзы → флаги).
-- `keepass.go` — `checkEngine`, `runKP`, парсинг KeePass XML (`parseSecrets`), `lookupSecret`.
-- `run.go` — `cmdRun`: резолв → пароль → `keepassxc-cli export -f xml` → инжект env → запуск дочерней команды, проброс кода возврата.
-- `commands.go` — `cmdConfig` (интерактивная настройка `default`).
-- `term.go` — ввод пароля через `/dev/tty` (`SECRETS_PASSWORD` для тестов), `readWithPrefill`.
-- `paths.go` — `expandHome`, `defaultConfigPath` (`~/.config/secrets/default`).
+Код разбит на пакеты под `internal/` (без циклов: `config`/`keepass`/`term` — листья; `keyring → config`; `domain → config,keepass,keyring,term`; `cmd → domain,config,keepass,keyring,term`; корневой `main → cmd`).
+
+- `main.go` (package `main`) — только `var version` (через `-X main.version`) и вызов `cmd.Execute(version)`.
+- `internal/config` — `Config{Sections,Cache}`/`Section`/`CacheConfig` (JSON), `Load`/`Save`; `ExpandHome`, `DefaultPath` (`~/.config/secrets/default`).
+- `internal/keepass` — `CheckEngine`, `Run` (вызов `keepassxc-cli`), парсинг KeePass XML (`ParseSecrets`, тип `Entry`), `LookupSecret`; операции записи `CreateStore` (`db-create`), `AddEmptySecret` (`mkdir`+`add`).
+- `internal/keyring` — `Cache`, `New(cfg.Cache)`, методы `Get/Remember/Forget`, подменяемые `keyringSet/Get/Delete` (go-keyring / Secret Service).
+- `internal/term` — терминальный ввод через `/dev/tty` (`SECRETS_PASSWORD` для тестов): `ReadPassword`, `ReadWithPrefill` (fallback-ввод), `Confirm` (Y/N, учитывает `-y`), `IsInteractive`.
+- `internal/domain` — логика приложения: `Resolve` (слияние `default` → секция тулзы → флаги, тип `Resolved`), `Mapping`/`MappingsFromMap`/`MappingsToMap`, `UnlockExport` (кэш→prompt→export), `AggregateStores`/`AggregateStoreMappings`, `gatherMissing`, `ReconcileStores` (отчёт + создание недостающего), `BuildStoreViews`/`StoreView`.
+- `internal/cmd` — CLI-слой:
+  - `execute.go` — `Execute(version)`: разбор argv, диспетчеризация (`config`/`check`/`show`/`forget`/`version`/run-режим), `usage`, `parseConfigArgs`.
+  - `args.go` — `splitArgs` (по `--`), `parseRunFlags`, `mergeSecretsFlag`, тип `runFlags`.
+  - `run.go` — `cmdRun`: резолв → (если `--dry-run` → `printPlan`) → пароль → export → инжект env → запуск дочерней команды, проброс кода возврата.
+  - `plan.go` — `printPlan` и хелперы dry-run (`describeSection`, `renderCommand`, `shellQuote`).
+  - `commands.go` — `cmdConfig` (TTY → TUI, иначе `configFallback`; после сохранения — `ReconcileStores` для default), `cmdCheck`, `cmdForget`.
+  - `tui.go` — Bubble Tea-модель настройки `default`: поле `key-store` с автодополнением пути (`refreshPathSuggestions`, `deleteLastPathSegment` на `alt+backspace`, раскрытие `~` на `tab`), построчный редактор маппингов с хоткеями (`a`/`e`/`d`/`↑↓`/`tab`/`ctrl+s`/`esc`) и легендой.
+  - `show.go` — `cmdShow`: read-only TUI (`showTUI`) со списком `.kdbx` (навигация `↑/↓`), `Enter` → открыть в GUI через `openInKeePassXC` (var, стабится в тестах); не-TTY → печать.
 
 ## Сборка и тесты
 
-Зависит от `keepassxc-cli` в PATH. Go 1.26.1.
+Зависит от `keepassxc-cli` в PATH. Go 1.26.1. TUI — на Bubble Tea (`charmbracelet/bubbletea`, `bubbles`, `lipgloss`); кэш пароля — `zalando/go-keyring` (godbus, без cgo). Сборка статическая (`CGO_ENABLED=0`).
 
 - `just build` — собрать бинарь `./secrets` (версия из `versions.txt`).
 - `just unit-test` — юнит-тесты (`go test ./...`).
