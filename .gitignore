@@ -1,0 +1,4 @@
+secrets
+*.kdbx
+tests/*
+!tests/.gitkeep
