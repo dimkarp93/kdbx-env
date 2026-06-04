@@ -13,6 +13,7 @@ import (
 
 	"secrets/internal/config"
 	"secrets/internal/domain"
+	"secrets/internal/keyring"
 )
 
 func TestSplitArgs(t *testing.T) {
@@ -179,7 +180,7 @@ func TestRefreshPathSuggestions(t *testing.T) {
 }
 
 func TestCommitEditAddSortAndDuplicate(t *testing.T) {
-	m := newConfigTUI("", []domain.Mapping{{Name: "B", Env: "2"}})
+	m := newConfigTUI("", []domain.Mapping{{Name: "B", Env: "2"}}, nil)
 	m.mode = modeEdit
 	m.editIndex = -1
 	m.name.SetValue("A")
@@ -205,7 +206,7 @@ func TestCommitEditAddSortAndDuplicate(t *testing.T) {
 }
 
 func TestCommitEditRequiresBothFields(t *testing.T) {
-	m := newConfigTUI("", nil)
+	m := newConfigTUI("", nil, nil)
 	m.mode = modeEdit
 	m.editIndex = -1
 	m.name.SetValue("")
@@ -218,7 +219,7 @@ func TestCommitEditRequiresBothFields(t *testing.T) {
 }
 
 func TestListDeleteAdjustsCursor(t *testing.T) {
-	m := newConfigTUI("", []domain.Mapping{{Name: "A", Env: "1"}, {Name: "B", Env: "2"}})
+	m := newConfigTUI("", []domain.Mapping{{Name: "A", Env: "1"}, {Name: "B", Env: "2"}}, nil)
 	m.mode = modeList
 	m.cursor = 1
 	res, _ := m.updateList(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
@@ -255,7 +256,7 @@ func TestShowTUINavigationAndOpen(t *testing.T) {
 		{Path: "/a.kdbx", Exists: true},
 		{Path: "/b.kdbx", Exists: false},
 	}
-	m := newShowTUI("/cfg", views)
+	m := newShowTUI("/cfg", nil, views, keyring.New(nil))
 
 	down := tea.KeyMsg{Type: tea.KeyDown}
 	res, _ := m.Update(down)

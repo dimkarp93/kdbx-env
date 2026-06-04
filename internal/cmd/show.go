@@ -5,11 +5,13 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"secrets/internal/config"
 	"secrets/internal/domain"
+	"secrets/internal/keyring"
 	"secrets/internal/term"
 )
 
@@ -34,19 +36,30 @@ func cmdShow(path string) {
 		os.Exit(1)
 	}
 	views := domain.BuildStoreViews(cfg)
+	cache := keyring.New(cfg.Cache)
 
 	if !term.IsInteractive() {
-		printStoreViews(path, views)
+		printStoreViews(path, cfg.Cache, views, cache)
 		return
 	}
-	if _, err := tea.NewProgram(newShowTUI(path, views)).Run(); err != nil {
+	if _, err := tea.NewProgram(newShowTUI(path, cfg.Cache, views, cache)).Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "tui error:", err)
 		os.Exit(1)
 	}
 }
 
-func printStoreViews(configPath string, views []domain.StoreView) {
+func printStoreViews(configPath string, cacheConfig *config.CacheConfig, views []domain.StoreView, cache keyring.Cache) {
 	fmt.Println("Config:", configPath)
+	fmt.Println()
+	if cacheConfig == nil || !cacheConfig.Enabled {
+		fmt.Println("Caching: disabled")
+	} else {
+		ttl := cacheConfig.TTL
+		if ttl == "" {
+			ttl = "10m"
+		}
+		fmt.Printf("Caching: enabled (TTL: %s)\n", ttl)
+	}
 	fmt.Println()
 	if len(views) == 0 {
 		fmt.Println("No key-stores configured.")
@@ -62,18 +75,42 @@ func printStoreViews(configPath string, views []domain.StoreView) {
 		for _, mp := range v.Mappings {
 			fmt.Printf("      %s → %s\n", mp.Name, mp.Env)
 		}
+		if cacheConfig != nil && cacheConfig.Enabled {
+			st := cache.Status(v.Path)
+			if st.Cached {
+				fmt.Printf("      [cached, expires in %s]\n", formatDuration(st.ExpiresIn))
+			} else {
+				fmt.Printf("      [not cached]\n")
+			}
+		}
 	}
 }
 
-type showTUI struct {
-	configPath string
-	views      []domain.StoreView
-	cursor     int
-	status     string
+func formatDuration(d time.Duration) string {
+	d = d.Truncate(time.Second)
+	h := int(d.Hours())
+	m := int(d.Minutes()) % 60
+	s := int(d.Seconds()) % 60
+	if h > 0 {
+		return fmt.Sprintf("%dh %02dm %02ds", h, m, s)
+	}
+	if m > 0 {
+		return fmt.Sprintf("%dm %02ds", m, s)
+	}
+	return fmt.Sprintf("%ds", s)
 }
 
-func newShowTUI(configPath string, views []domain.StoreView) showTUI {
-	return showTUI{configPath: configPath, views: views}
+type showTUI struct {
+	configPath  string
+	cacheConfig *config.CacheConfig
+	views       []domain.StoreView
+	cache       keyring.Cache
+	cursor      int
+	status      string
+}
+
+func newShowTUI(configPath string, cacheConfig *config.CacheConfig, views []domain.StoreView, cache keyring.Cache) showTUI {
+	return showTUI{configPath: configPath, cacheConfig: cacheConfig, views: views, cache: cache}
 }
 
 func (m showTUI) Init() tea.Cmd { return nil }
@@ -118,7 +155,18 @@ func (m showTUI) View() string {
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("secrets — config view"))
 	b.WriteString("\n\n")
-	b.WriteString(labelStyle.Render("  config: ") + m.configPath + "\n\n")
+	b.WriteString(labelStyle.Render("  config: ") + m.configPath + "\n")
+
+	if m.cacheConfig == nil || !m.cacheConfig.Enabled {
+		b.WriteString(hintStyle.Render("  caching: disabled") + "\n")
+	} else {
+		ttl := m.cacheConfig.TTL
+		if ttl == "" {
+			ttl = "10m"
+		}
+		b.WriteString(hintStyle.Render(fmt.Sprintf("  caching: enabled (TTL: %s)", ttl)) + "\n")
+	}
+	b.WriteString("\n")
 
 	if len(m.views) == 0 {
 		b.WriteString(hintStyle.Render("  No key-stores configured.") + "\n")
@@ -136,6 +184,14 @@ func (m showTUI) View() string {
 			}
 			for _, mp := range v.Mappings {
 				b.WriteString(hintStyle.Render(fmt.Sprintf("        %s → %s", mp.Name, mp.Env)) + "\n")
+			}
+			if m.cacheConfig != nil && m.cacheConfig.Enabled {
+				st := m.cache.Status(v.Path)
+				if st.Cached {
+					b.WriteString(hintStyle.Render(fmt.Sprintf("        [cached, expires in %s]", formatDuration(st.ExpiresIn))) + "\n")
+				} else {
+					b.WriteString(hintStyle.Render("        [not cached]") + "\n")
+				}
 			}
 		}
 	}
