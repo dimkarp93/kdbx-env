@@ -21,6 +21,7 @@ const (
 	modeKeyStore tuiMode = iota
 	modeList
 	modeEdit
+	modeCache
 )
 
 var (
@@ -32,19 +33,22 @@ var (
 )
 
 type configTUI struct {
-	keyStore  textinput.Model
-	name      textinput.Model
-	env       textinput.Model
-	pairs     []domain.Mapping
-	cursor    int
-	mode      tuiMode
-	editIndex int
-	editName  string
-	err       string
-	canceled  bool
+	keyStore     textinput.Model
+	name         textinput.Model
+	env          textinput.Model
+	pairs        []domain.Mapping
+	cursor       int
+	mode         tuiMode
+	editIndex    int
+	editName     string
+	err          string
+	canceled     bool
+	cacheEnabled bool
+	cacheTTL     textinput.Model
+	cacheFocus   int
 }
 
-func newConfigTUI(keyStore string, pairs []domain.Mapping) configTUI {
+func newConfigTUI(keyStore string, pairs []domain.Mapping, cacheConfig *config.CacheConfig) configTUI {
 	ks := textinput.New()
 	ks.Prompt = ""
 	ks.Placeholder = "/path/to/store.kdbx"
@@ -61,13 +65,28 @@ func newConfigTUI(keyStore string, pairs []domain.Mapping) configTUI {
 	env.Prompt = ""
 	env.Placeholder = "ENV_VAR"
 
+	ttlVal := "10m"
+	cacheEnabled := false
+	if cacheConfig != nil && cacheConfig.Enabled {
+		cacheEnabled = true
+		if cacheConfig.TTL != "" {
+			ttlVal = cacheConfig.TTL
+		}
+	}
+	cacheTTL := textinput.New()
+	cacheTTL.Prompt = ""
+	cacheTTL.Placeholder = "10m"
+	cacheTTL.SetValue(ttlVal)
+
 	return configTUI{
-		keyStore:  ks,
-		name:      name,
-		env:       env,
-		pairs:     pairs,
-		mode:      modeKeyStore,
-		editIndex: -1,
+		keyStore:     ks,
+		name:         name,
+		env:          env,
+		pairs:        pairs,
+		mode:         modeKeyStore,
+		editIndex:    -1,
+		cacheEnabled: cacheEnabled,
+		cacheTTL:     cacheTTL,
 	}
 }
 
@@ -117,6 +136,8 @@ func (m configTUI) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateList(msg)
 	case modeEdit:
 		return m.updateEdit(msg)
+	case modeCache:
+		return m.updateCache(msg)
 	}
 	return m, nil
 }
@@ -197,6 +218,49 @@ func (m configTUI) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursor--
 			}
 		}
+	case "c":
+		m.mode = modeCache
+		m.cacheFocus = 0
+		m.cacheTTL.Blur()
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m configTUI) updateCache(msg tea.Msg) (tea.Model, tea.Cmd) {
+	k, ok := msg.(tea.KeyMsg)
+	if ok {
+		switch k.String() {
+		case "esc":
+			m.mode = modeList
+			m.cacheTTL.Blur()
+			return m, nil
+		case "ctrl+s":
+			return m, tea.Quit
+		case "space", "enter":
+			if m.cacheFocus == 0 {
+				m.cacheEnabled = !m.cacheEnabled
+				if !m.cacheEnabled {
+					m.cacheTTL.Blur()
+				}
+				return m, nil
+			}
+		case "tab":
+			if m.cacheEnabled {
+				if m.cacheFocus == 0 {
+					m.cacheFocus = 1
+					return m, m.cacheTTL.Focus()
+				}
+				m.cacheFocus = 0
+				m.cacheTTL.Blur()
+			}
+			return m, nil
+		}
+	}
+	if m.cacheFocus == 1 && m.cacheEnabled {
+		var cmd tea.Cmd
+		m.cacheTTL, cmd = m.cacheTTL.Update(msg)
+		return m, cmd
 	}
 	return m, nil
 }
@@ -327,6 +391,29 @@ func (m configTUI) View() string {
 		b.WriteString(envMark + "env variable:          " + m.env.View() + "\n")
 	}
 
+	cacheLabel := "  cache"
+	if m.mode == modeCache {
+		cacheLabel = focusStyle.Render("▸ cache")
+	}
+	b.WriteString("\n" + labelStyle.Render(cacheLabel) + "\n")
+	toggle := "[ ] keyring disabled"
+	if m.cacheEnabled {
+		toggle = "[x] keyring enabled"
+	}
+	if m.mode == modeCache && m.cacheFocus == 0 {
+		b.WriteString(focusStyle.Render("  > "+toggle) + "\n")
+	} else {
+		b.WriteString("    " + toggle + "\n")
+	}
+	if m.cacheEnabled {
+		ttlLine := "TTL: " + m.cacheTTL.View()
+		if m.mode == modeCache && m.cacheFocus == 1 {
+			b.WriteString(focusStyle.Render("  > ") + ttlLine + "\n")
+		} else {
+			b.WriteString("    " + ttlLine + "\n")
+		}
+	}
+
 	if m.err != "" {
 		b.WriteString("\n" + errStyle.Render("  ! "+m.err) + "\n")
 	}
@@ -340,21 +427,31 @@ func (m configTUI) legend() string {
 	case modeKeyStore:
 		return "tab complete (~ expands) · alt+⌫ delete dir · ↑/↓ suggestions · enter next · esc cancel"
 	case modeList:
-		return "↑/↓ move · a add · e edit · d delete · tab edit path · ctrl+s save · esc cancel"
+		return "↑/↓ move · a add · e edit · d delete · tab edit path · c cache · ctrl+s save · esc cancel"
 	case modeEdit:
 		return "tab switch field · enter ok · esc back"
+	case modeCache:
+		return "space toggle · tab TTL · ctrl+s save · esc back"
 	}
 	return ""
 }
 
-func runConfigTUI(keyStore string, pairs []domain.Mapping) (string, []domain.Mapping, bool, error) {
-	res, err := tea.NewProgram(newConfigTUI(keyStore, pairs)).Run()
+func runConfigTUI(keyStore string, pairs []domain.Mapping, cacheConfig *config.CacheConfig) (string, []domain.Mapping, *config.CacheConfig, bool, error) {
+	res, err := tea.NewProgram(newConfigTUI(keyStore, pairs, cacheConfig)).Run()
 	if err != nil {
-		return "", nil, false, err
+		return "", nil, nil, false, err
 	}
 	final := res.(configTUI)
 	if final.canceled {
-		return "", nil, true, nil
+		return "", nil, nil, true, nil
 	}
-	return strings.TrimSpace(final.keyStore.Value()), final.pairs, false, nil
+	var outCache *config.CacheConfig
+	if final.cacheEnabled {
+		ttl := strings.TrimSpace(final.cacheTTL.Value())
+		if ttl == "" {
+			ttl = "10m"
+		}
+		outCache = &config.CacheConfig{Enabled: true, TTL: ttl}
+	}
+	return strings.TrimSpace(final.keyStore.Value()), final.pairs, outCache, false, nil
 }

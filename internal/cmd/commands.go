@@ -29,15 +29,17 @@ func cmdConfig(path string, assumeYes bool) {
 
 	var keyStore string
 	var canceled bool
+	var newCache *config.CacheConfig
 	if term.IsInteractive() {
-		ks, ps, c, err := runConfigTUI(def.KeyStore, pairs)
+		ks, ps, cc, c, err := runConfigTUI(def.KeyStore, pairs, cfg.Cache)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "tui error:", err)
 			os.Exit(1)
 		}
-		keyStore, pairs, canceled = ks, ps, c
+		keyStore, pairs, newCache, canceled = ks, ps, cc, c
 	} else {
 		keyStore, pairs = configFallback(def.KeyStore, pairs)
+		newCache = cfg.Cache
 	}
 
 	if canceled {
@@ -48,6 +50,7 @@ func cmdConfig(path string, assumeYes bool) {
 	def.KeyStore = keyStore
 	def.Secrets = domain.MappingsToMap(pairs)
 	cfg.Sections["default"] = def
+	cfg.Cache = newCache
 
 	if err := config.Save(path, cfg); err != nil {
 		fmt.Fprintln(os.Stderr, "cannot write config:", err)

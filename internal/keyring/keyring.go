@@ -77,3 +77,27 @@ func (c Cache) Remember(keyStore, password string) {
 func (c Cache) Forget(keyStore string) {
 	_ = keyringDelete(keyringService, keyStore)
 }
+
+type CacheStatus struct {
+	Cached    bool
+	ExpiresIn time.Duration
+}
+
+func (c Cache) Status(keyStore string) CacheStatus {
+	if !c.enabled {
+		return CacheStatus{}
+	}
+	raw, err := keyringGet(keyringService, keyStore)
+	if err != nil {
+		return CacheStatus{}
+	}
+	var cs cachedSecret
+	if json.Unmarshal([]byte(raw), &cs) != nil {
+		return CacheStatus{}
+	}
+	remaining := c.ttl - time.Since(time.Unix(cs.StoredAt, 0))
+	if remaining <= 0 {
+		return CacheStatus{}
+	}
+	return CacheStatus{Cached: true, ExpiresIn: remaining}
+}
