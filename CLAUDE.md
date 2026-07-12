@@ -61,4 +61,7 @@ secrets forget  [--config <path>]
 - `just test` — всё вместе.
 - `just bump-version` — поднять `versions.txt`.
 
-Релиз — push в `main`/`master`, тег `v<versions.txt>` собирается через `.github/workflows/release.yml` (см. конвенции `dimkarp93/install`).
+Релиз — push в `main`/`master`, тег `v<versions.txt>` (см. конвенции `dimkarp93/install`). Две площадки, одинаковые артефакты:
+
+- GitHub Actions — `.github/workflows/release.yml`.
+- Gitea Actions — `.gitea/workflows/release.yml`: без внешних actions (checkout, установка Go и публикация — шаги `run:` на shell), релиз создаётся через Gitea API.
