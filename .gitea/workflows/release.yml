@@ -7,6 +7,8 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      SERVER_URL: http://gitea:3000
     steps:
       - name: Checkout
         env:
@@ -15,7 +17,7 @@ jobs:
           set -eu
           auth=$(printf '%s:' "$TOKEN" | base64 | tr -d '\n')
           git init -q .
-          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git remote add origin "${SERVER_URL}/${GITHUB_REPOSITORY}.git"
           git config --local "http.extraheader" "Authorization: Basic ${auth}"
           git fetch -q --no-tags --depth=1 origin "$GITHUB_SHA"
           git checkout -q FETCH_HEAD
@@ -124,7 +126,7 @@ jobs:
           TAG: ${{ steps.ver.outputs.tag }}
         run: |
           set -eu
-          api="${GITHUB_SERVER_URL}/api/v1/repos/${GITHUB_REPOSITORY}"
+          api="${SERVER_URL}/api/v1/repos/${GITHUB_REPOSITORY}"
           body=$(printf '{"tag_name":"%s","target_commitish":"%s","name":"%s","body":"Автоматический релиз %s из versions.txt"}' \
             "$TAG" "$GITHUB_SHA" "$TAG" "$TAG")
           resp=$(curl -fsS -X POST "${api}/releases" \
