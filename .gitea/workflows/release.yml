@@ -12,18 +12,22 @@ jobs:
     steps:
       - name: Checkout
         env:
-          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TOKEN: ${{ secrets.GITEA_TOKEN }}
+          REPOSITORY: ${{ gitea.repository }}
+          SHA: ${{ gitea.sha }}
         run: |
           set -eu
           auth=$(printf '%s:' "$TOKEN" | base64 | tr -d '\n')
           git init -q .
-          git remote add origin "${SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git remote add origin "${SERVER_URL}/${REPOSITORY}.git"
           git config --local "http.extraheader" "Authorization: Basic ${auth}"
-          git fetch -q --no-tags --depth=1 origin "$GITHUB_SHA"
+          git fetch -q --no-tags --depth=1 origin "$SHA"
           git checkout -q FETCH_HEAD
 
       - name: Read version
         id: ver
+        env:
+          REPOSITORY: ${{ gitea.repository }}
         run: |
           set -eu
           if [ ! -f versions.txt ]; then
@@ -35,10 +39,10 @@ jobs:
             echo "versions.txt должен содержать semver X.Y.Z (получено: '$v')" >&2
             exit 1
           fi
-          bin="${GITHUB_REPOSITORY##*/}"
-          echo "version=$v" >> "$GITHUB_OUTPUT"
-          echo "tag=v$v"    >> "$GITHUB_OUTPUT"
-          echo "bin=$bin"   >> "$GITHUB_OUTPUT"
+          bin="${REPOSITORY##*/}"
+          echo "version=$v" >> "$GITEA_OUTPUT"
+          echo "tag=v$v"    >> "$GITEA_OUTPUT"
+          echo "bin=$bin"   >> "$GITEA_OUTPUT"
 
       - name: Check tag existence
         id: tagcheck
@@ -48,9 +52,9 @@ jobs:
           set -eu
           if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
             echo "Тег ${TAG} уже существует — пропускаем релиз"
-            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "exists=true" >> "$GITEA_OUTPUT"
           else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "exists=false" >> "$GITEA_OUTPUT"
           fi
 
       - name: Setup Go
@@ -87,7 +91,7 @@ jobs:
           rm -rf "$root/go"
           curl -fsSL "https://go.dev/dl/go${gv}.$(uname -s | tr '[:upper:]' '[:lower:]')-${arch}.tar.gz" \
             | tar -C "$root" -xz
-          echo "$root/go/bin" >> "$GITHUB_PATH"
+          echo "$root/go/bin" >> "$GITEA_PATH"
           "$root/go/bin/go" version
 
       - name: Run tests
@@ -122,13 +126,15 @@ jobs:
       - name: Create release
         if: steps.tagcheck.outputs.exists == 'false'
         env:
-          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TOKEN: ${{ secrets.GITEA_TOKEN }}
           TAG: ${{ steps.ver.outputs.tag }}
+          REPOSITORY: ${{ gitea.repository }}
+          SHA: ${{ gitea.sha }}
         run: |
           set -eu
-          api="${SERVER_URL}/api/v1/repos/${GITHUB_REPOSITORY}"
+          api="${SERVER_URL}/api/v1/repos/${REPOSITORY}"
           body=$(printf '{"tag_name":"%s","target_commitish":"%s","name":"%s","body":"Автоматический релиз %s из versions.txt"}' \
-            "$TAG" "$GITHUB_SHA" "$TAG" "$TAG")
+            "$TAG" "$SHA" "$TAG" "$TAG")
           resp=$(curl -fsS -X POST "${api}/releases" \
             -H "Authorization: token ${TOKEN}" \
             -H "Content-Type: application/json" \
