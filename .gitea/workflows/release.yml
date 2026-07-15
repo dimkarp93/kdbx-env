@@ -76,8 +76,10 @@ jobs:
           case "$gv" in
             *.*.*) ;;
             *)
-              full=$(curl -fsSL "https://go.dev/dl/?mode=json&include=all" \
-                | grep -o "\"go${gv}\.[0-9]*\"" | head -n1 | tr -d '"' | sed 's/^go//')
+              json=$(curl -fsSL "https://go.dev/dl/?mode=json&include=all")
+              full=$(printf '%s\n' "$json" \
+                | grep -o "go${gv}\.[0-9]*" \
+                | sort -V | tail -n1 | sed 's/^go//')
               gv="${full:-${gv}.0}"
               ;;
           esac
@@ -89,8 +91,10 @@ jobs:
           root="$HOME/.local"
           mkdir -p "$root"
           rm -rf "$root/go"
-          curl -fsSL "https://go.dev/dl/go${gv}.$(uname -s | tr '[:upper:]' '[:lower:]')-${arch}.tar.gz" \
-            | tar -C "$root" -xz
+          os=$(uname -s | tr '[:upper:]' '[:lower:]')
+          curl -fsSL "https://go.dev/dl/go${gv}.${os}-${arch}.tar.gz" -o "$root/go.tar.gz"
+          tar -C "$root" -xzf "$root/go.tar.gz"
+          rm -f "$root/go.tar.gz"
           echo "$root/go/bin" >> "$GITEA_PATH"
           "$root/go/bin/go" version
 
