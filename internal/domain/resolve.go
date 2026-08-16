@@ -3,7 +3,7 @@ package domain
 import (
 	"maps"
 
-	"secrets/internal/config"
+	"github.com/dimkarp93/kdbx-env/internal/config"
 )
 
 type Resolved struct {

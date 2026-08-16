@@ -87,12 +87,12 @@ func parseConfigArgs(cmd string, args []string) (string, bool) {
 
 func usage() {
 	fmt.Fprintf(os.Stderr, `Usage:
-  secrets [--config <path>] [--key-store <path>] [--secrets=name:env,...] [--dry-run] -- <cmd> [args...]
-  secrets config [--config <path>] [-y]
-  secrets check  [--config <path>] [-y]
-  secrets show   [--config <path>]
-  secrets forget [--config <path>]
-  secrets version | --version | -v
+  kdbx-env [--config <path>] [--key-store <path>] [--secrets=name:env,...] [--dry-run] -- <cmd> [args...]
+  kdbx-env config [--config <path>] [-y]
+  kdbx-env check  [--config <path>] [-y]
+  kdbx-env show   [--config <path>]
+  kdbx-env forget [--config <path>]
+  kdbx-env version | --version | -v
 
 Runs <cmd> with secrets from a .kdbx key-store injected as environment variables.
 Secrets never touch your shell history or disk.
@@ -112,7 +112,7 @@ Password caching is opt-in via the config's "cached" section
 OS keyring (Secret Service). Disabled by default.
 
 Flags:
-  --config <path>          Config file (default: ~/.config/secrets/default)
+  --config <path>          Config file (default: ~/.config/kdbx-env/default)
   --key-store <path>       Path to the .kdbx file (overrides config)
   --secrets=name:env,...   Secret-to-env mapping (merged over config)
   --dry-run                Print the resolved plan and exit; do not read the

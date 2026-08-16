@@ -11,9 +11,9 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"secrets/internal/config"
-	"secrets/internal/domain"
-	"secrets/internal/keyring"
+	"github.com/dimkarp93/kdbx-env/internal/config"
+	"github.com/dimkarp93/kdbx-env/internal/domain"
+	"github.com/dimkarp93/kdbx-env/internal/keyring"
 )
 
 func TestSplitArgs(t *testing.T) {

@@ -1,4 +1,4 @@
-module secrets
+module github.com/dimkarp93/kdbx-env
 
 go 1.26.1
 

@@ -6,10 +6,10 @@ import (
 	"sort"
 	"strings"
 
-	"secrets/internal/config"
-	"secrets/internal/domain"
-	"secrets/internal/keyring"
-	"secrets/internal/term"
+	"github.com/dimkarp93/kdbx-env/internal/config"
+	"github.com/dimkarp93/kdbx-env/internal/domain"
+	"github.com/dimkarp93/kdbx-env/internal/keyring"
+	"github.com/dimkarp93/kdbx-env/internal/term"
 )
 
 func cmdConfig(path string, assumeYes bool) {

@@ -1,11 +1,11 @@
-# secrets
+# kdbx-env
 
-`secrets` — обёртка для CLI-утилит, которая подставляет секреты из зашифрованного `.kdbx`-хранилища в переменные окружения дочерней команды и запускает её.
+`kdbx-env` — обёртка для CLI-утилит, которая подставляет секреты из зашифрованного `.kdbx`-хранилища в переменные окружения дочерней команды и запускает её.
 
-Зачем: многие утилиты требуют передачи токенов через env-переменные. Делать это вручную из shell неудобно и небезопасно — секрет попадает в историю команд и в plaintext-файлы. `secrets` решает это: значение секрета берётся из зашифрованного `.kdbx`, а сам вызов выглядит так:
+Зачем: многие утилиты требуют передачи токенов через env-переменные. Делать это вручную из shell неудобно и небезопасно — секрет попадает в историю команд и в plaintext-файлы. `kdbx-env` решает это: значение секрета берётся из зашифрованного `.kdbx`, а сам вызов выглядит так:
 
 ```sh
-secrets --config ~/.config/secrets/install_secrets -- install user/repo
+kdbx-env --config ~/.config/kdbx-env/install_secrets -- install user/repo
 ```
 
 В строке вызова секрета нет — история чистая. Секрет существует только в окружении дочернего процесса.
@@ -30,50 +30,50 @@ brew install keepassxc
 Через установщик [`dimkarp93/install`](https://github.com/dimkarp93/install):
 
 ```sh
-github_install.sh dimkarp93/secrets
+github_install.sh dimkarp93/kdbx-env
 # или одной строкой:
-curl -fsSL https://raw.githubusercontent.com/dimkarp93/install/master/install.sh | sh -s -- dimkarp93/secrets
+curl -fsSL https://raw.githubusercontent.com/dimkarp93/install/master/install.sh | sh -s -- dimkarp93/kdbx-env
 ```
 
 ## Использование
 
 ```
-secrets [--config <path>] [--key-store <path>] [--secrets=name:env,...] [--dry-run] -- <cmd> [args...]
-secrets config [--config <path>]
-secrets version | --version | -v
+kdbx-env [--config <path>] [--key-store <path>] [--secrets=name:env,...] [--dry-run] -- <cmd> [args...]
+kdbx-env config [--config <path>]
+kdbx-env version | --version | -v
 ```
 
 Всё после `--` — команда, которую надо запустить. Первое слово команды (`install` в примере) выбирает секцию конфига; если такой секции нет, используется `default`. Флаги должны идти **до** `--`.
 
 Флаги:
 
-- `--config <path>` — путь до конфига. По умолчанию `~/.config/secrets/default`.
+- `--config <path>` — путь до конфига. По умолчанию `~/.config/kdbx-env/default`.
 - `--key-store <path>` — полный путь до `.kdbx`-файла. Перетирает значение из конфига.
 - `--secrets=name:env,...` — маппинг секретов на env-переменные. Сливается поверх конфига.
 - `--dry-run` — не запускать команду и не трогать хранилище: показать разрешённый план (см. ниже).
 
-При запуске `secrets` спрашивает пароль от хранилища (ввод скрыт, читается с `/dev/tty`). Отмена — `Ctrl+C` / `Ctrl+D`.
+При запуске `kdbx-env` спрашивает пароль от хранилища (ввод скрыт, читается с `/dev/tty`). Отмена — `Ctrl+C` / `Ctrl+D`.
 
 ### Пример
 
 ```sh
-secrets --key-store ~/secrets/tokens.kdbx --secrets=GITHUB_TOKEN:GH_TOKEN -- gh repo list
+kdbx-env --key-store ~/secrets/tokens.kdbx --secrets=GITHUB_TOKEN:GH_TOKEN -- gh repo list
 ```
 
-`secrets` прочитает запись с заголовком `GITHUB_TOKEN` из `tokens.kdbx`, положит её пароль в переменную `GH_TOKEN` и запустит `gh repo list`.
+`kdbx-env` прочитает запись с заголовком `GITHUB_TOKEN` из `tokens.kdbx`, положит её пароль в переменную `GH_TOKEN` и запустит `gh repo list`.
 
 ### Предпросмотр: `--dry-run`
 
 С флагом `--dry-run` команда не выполняется, пароль не запрашивается и `.kdbx` не читается. Выводится разрешённый план: какой конфиг используется, какая секция применена, активные маппинги и итоговая команда (значения секретов заменены плейсхолдером `<secret from Title>`):
 
 ```sh
-$ secrets --dry-run -- install user/repo
+$ kdbx-env --dry-run -- install user/repo
 Dry run — the command will NOT be executed.
 
-Config file:  /home/user/.config/secrets/default
+Config file:  /home/user/.config/kdbx-env/default
 Tool:         install
 Section:      "install" (merged over "default")
-Key-store:    ~/.config/secrets/store.kdbx
+Key-store:    ~/.config/kdbx-env/store.kdbx
 
 Mappings (env ← secret):
   GH_TOKEN  ← GITHUB_TOKEN
@@ -94,7 +94,7 @@ Command:
 {
   "sections": {
     "default": {
-      "key-store": "~/.config/secrets/store.kdbx",
+      "key-store": "~/.config/kdbx-env/store.kdbx",
       "secrets": { "GITHUB_TOKEN": "GH_TOKEN" }
     },
     "install": {
@@ -117,12 +117,12 @@ Command:
 
 ## Команда `config`
 
-`secrets config` интерактивно настраивает секцию `default` (путь до `key-store` и маппинг секретов) и записывает конфиг:
+`kdbx-env config` интерактивно настраивает секцию `default` (путь до `key-store` и маппинг секретов) и записывает конфиг:
 
 ```sh
-secrets config
+kdbx-env config
 # или в произвольный файл:
-secrets config --config ~/.config/secrets/install_secrets
+kdbx-env config --config ~/.config/kdbx-env/install_secrets
 ```
 
 В терминале открывается TUI:
@@ -142,19 +142,19 @@ secrets config --config ~/.config/secrets/install_secrets
 
 ## Команда `check`
 
-`secrets check` проверяет, что во всех `.kdbx`-файлах, на которые ссылается конфиг (по всем секциям, с учётом слияния с `default`), есть записи со всеми нужными `Title`. Отсутствующие выводятся **сгруппированно по файлам**, после чего предлагается добавить их как пустые записи.
+`kdbx-env check` проверяет, что во всех `.kdbx`-файлах, на которые ссылается конфиг (по всем секциям, с учётом слияния с `default`), есть записи со всеми нужными `Title`. Отсутствующие выводятся **сгруппированно по файлам**, после чего предлагается добавить их как пустые записи.
 
 ```sh
-secrets check
-secrets check --config ~/.config/secrets/install_secrets
-secrets check -y          # добавить все недостающие записи без подтверждения
+kdbx-env check
+kdbx-env check --config ~/.config/kdbx-env/install_secrets
+kdbx-env check -y          # добавить все недостающие записи без подтверждения
 ```
 
 Пример вывода:
 
 ```
 Missing secrets:
-  /home/user/.config/secrets/store.kdbx
+  /home/user/.config/kdbx-env/store.kdbx
     - NPM_TOKEN
   /home/user/work/deploy.kdbx  (key-store does not exist)
     - AWS_KEY
@@ -164,11 +164,11 @@ Missing secrets:
 
 ## Команда `show`
 
-`secrets show` показывает текущий конфиг: путь до файла и список `.kdbx`-хранилищ с их маппингами (`name → env`). По хранилищам можно перемещаться стрелками `↑/↓`, а по `Enter` выбранный файл открывается в **GUI KeePassXC** (бинарь `keepassxc`).
+`kdbx-env show` показывает текущий конфиг: путь до файла и список `.kdbx`-хранилищ с их маппингами (`name → env`). По хранилищам можно перемещаться стрелками `↑/↓`, а по `Enter` выбранный файл открывается в **GUI KeePassXC** (бинарь `keepassxc`).
 
 ```sh
-secrets show
-secrets show --config ~/.config/secrets/install_secrets
+kdbx-env show
+kdbx-env show --config ~/.config/kdbx-env/install_secrets
 ```
 
 - Отсутствующие на диске файлы помечаются `(missing)`; открыть их нельзя.
@@ -177,7 +177,7 @@ secrets show --config ~/.config/secrets/install_secrets
 
 ## Кэширование пароля
 
-Внутри одного вызова `secrets` пароль на базу спрашивается один раз. Чтобы не вводить его повторно **между** вызовами в рамках сессии, можно включить кэш в конфиге:
+Внутри одного вызова `kdbx-env` пароль на базу спрашивается один раз. Чтобы не вводить его повторно **между** вызовами в рамках сессии, можно включить кэш в конфиге:
 
 ```json
 "cached": { "enabled": true, "ttl": "10m" }
@@ -186,7 +186,7 @@ secrets show --config ~/.config/secrets/install_secrets
 - `enabled` — включить кэш (по умолчанию выключен).
 - `ttl` — время жизни записи (формат Go `time.ParseDuration`: `30s`, `10m`, `2h`; по умолчанию `10m`).
 
-Пароль сохраняется в **OS-keyring** через Secret Service (gnome-keyring / KWallet), управляется только через конфиг (нет CLI-флагов и env). Сбросить кэш: `secrets forget` (очищает записи для всех `.kdbx` из конфига).
+Пароль сохраняется в **OS-keyring** через Secret Service (gnome-keyring / KWallet), управляется только через конфиг (нет CLI-флагов и env). Сбросить кэш: `kdbx-env forget` (очищает записи для всех `.kdbx` из конфига).
 
 **Чем это управляется и риски:**
 
@@ -197,12 +197,12 @@ secrets show --config ~/.config/secrets/install_secrets
 
 ## Ограничения безопасности
 
-`secrets` инжектит секреты в окружение дочернего процесса. Env-переменные процесса доступны через `/proc/<pid>/environ` тому же пользователю (и root). Это общий компромисс всего класса инструментов (`op run`, `envchain`, `aws-vault`) — но это радикально безопаснее, чем хранить секреты в истории shell или в plaintext-файлах. Если нужна защита от чтения окружения соседними процессами того же пользователя — этот подход (как и аналоги) не подходит.
+`kdbx-env` инжектит секреты в окружение дочернего процесса. Env-переменные процесса доступны через `/proc/<pid>/environ` тому же пользователю (и root). Это общий компромисс всего класса инструментов (`op run`, `envchain`, `aws-vault`) — но это радикально безопаснее, чем хранить секреты в истории shell или в plaintext-файлах. Если нужна защита от чтения окружения соседними процессами того же пользователя — этот подход (как и аналоги) не подходит.
 
 ## Разработка
 
 ```sh
-just build       # собрать ./secrets
+just build       # собрать ./kdbx-env
 just unit-test   # юнит-тесты
 just e2e-test    # e2e (нужна keepassxc-cli)
 just test        # всё вместе

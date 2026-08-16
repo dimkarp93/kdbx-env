@@ -25,5 +25,5 @@ func ExpandHome(p string) string {
 
 func DefaultPath() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "secrets", "default")
+	return filepath.Join(home, ".config", "kdbx-env", "default")
 }

@@ -92,7 +92,7 @@ func Confirm(question string, assumeYes bool) bool {
 }
 
 func ReadPassword(prompt string) string {
-	if v := os.Getenv("SECRETS_PASSWORD"); v != "" {
+	if v := os.Getenv("KDBX_ENV_PASSWORD"); v != "" {
 		return v
 	}
 	tty := openTTY()

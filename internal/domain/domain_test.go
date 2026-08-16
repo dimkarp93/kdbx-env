@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	"secrets/internal/config"
+	"github.com/dimkarp93/kdbx-env/internal/config"
 )
 
 func TestResolveMerge(t *testing.T) {

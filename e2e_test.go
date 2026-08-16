@@ -13,8 +13,8 @@ import (
 	"strings"
 	"testing"
 
-	"secrets/internal/config"
-	"secrets/internal/keepass"
+	"github.com/dimkarp93/kdbx-env/internal/config"
+	"github.com/dimkarp93/kdbx-env/internal/keepass"
 )
 
 const testPassword = "test-pass-123"
@@ -22,13 +22,13 @@ const testPassword = "test-pass-123"
 var binaryPath string
 
 func TestMain(m *testing.M) {
-	root := os.Getenv("SECRETS_E2E_ROOT")
+	root := os.Getenv("KDBX_ENV_E2E_ROOT")
 	if root == "" {
-		fmt.Fprintln(os.Stderr, "SECRETS_E2E_ROOT is required for e2e tests")
+		fmt.Fprintln(os.Stderr, "KDBX_ENV_E2E_ROOT is required for e2e tests")
 		os.Exit(2)
 	}
 	if err := os.MkdirAll(root, 0755); err != nil {
-		fmt.Fprintln(os.Stderr, "cannot create SECRETS_E2E_ROOT:", err)
+		fmt.Fprintln(os.Stderr, "cannot create KDBX_ENV_E2E_ROOT:", err)
 		os.Exit(2)
 	}
 	wd, err := os.Getwd()
@@ -36,7 +36,7 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, "getwd:", err)
 		os.Exit(2)
 	}
-	binaryPath = filepath.Join(wd, "secrets")
+	binaryPath = filepath.Join(wd, "kdbx-env")
 	if _, err := os.Stat(binaryPath); err != nil {
 		fmt.Fprintln(os.Stderr, "binary not found at", binaryPath, "— run `just build` first")
 		os.Exit(2)
@@ -56,15 +56,15 @@ type sandbox struct {
 
 func newSandbox(t *testing.T) *sandbox {
 	t.Helper()
-	root := os.Getenv("SECRETS_E2E_ROOT")
-	keep := os.Getenv("SECRETS_E2E_KEEP") == "1"
+	root := os.Getenv("KDBX_ENV_E2E_ROOT")
+	keep := os.Getenv("KDBX_ENV_E2E_KEEP") == "1"
 
 	dir := filepath.Join(root, t.Name())
 	if err := os.RemoveAll(dir); err != nil {
 		t.Fatal(err)
 	}
 	home := filepath.Join(dir, "home")
-	if err := os.MkdirAll(filepath.Join(home, ".config", "secrets"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(home, ".config", "kdbx-env"), 0755); err != nil {
 		t.Fatal(err)
 	}
 	sb := &sandbox{t: t, dir: dir, home: home}
@@ -114,7 +114,7 @@ func (s *sandbox) makeStore(rel string, entries map[string]string) string {
 func (s *sandbox) writeConfig(sections map[string]config.Section) {
 	s.t.Helper()
 	data, _ := json.MarshalIndent(config.Config{Sections: sections}, "", "  ")
-	path := filepath.Join(s.home, ".config", "secrets", "default")
+	path := filepath.Join(s.home, ".config", "kdbx-env", "default")
 	if err := os.WriteFile(path, data, 0600); err != nil {
 		s.t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func (s *sandbox) run(args ...string) cmdResult {
 	cmd.Dir = s.dir
 	cmd.Env = append(os.Environ(),
 		"HOME="+s.home,
-		"SECRETS_PASSWORD="+testPassword,
+		"KDBX_ENV_PASSWORD="+testPassword,
 	)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -334,7 +334,7 @@ func TestE2E_CheckAllPresent(t *testing.T) {
 func TestE2E_ConfigCreatesStoreAndSecrets(t *testing.T) {
 	sb := newSandbox(t)
 	store := filepath.Join(sb.home, "new", "store.kdbx")
-	cfgPath := filepath.Join(sb.home, ".config", "secrets", "default")
+	cfgPath := filepath.Join(sb.home, ".config", "kdbx-env", "default")
 
 	stdin := store + "\n" + "GITHUB_TOKEN:GH_TOKEN,API_KEY:API_KEY\n"
 	r := sb.runStdin(stdin, "config", "-y", "--config", cfgPath)
@@ -363,7 +363,7 @@ func (s *sandbox) runStdin(stdin string, args ...string) cmdResult {
 	s.t.Helper()
 	cmd := exec.Command(binaryPath, args...)
 	cmd.Dir = s.dir
-	cmd.Env = append(os.Environ(), "HOME="+s.home, "SECRETS_PASSWORD="+testPassword)
+	cmd.Env = append(os.Environ(), "HOME="+s.home, "KDBX_ENV_PASSWORD="+testPassword)
 	cmd.Stdin = strings.NewReader(stdin)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -385,7 +385,7 @@ func TestE2E_WrongPassword(t *testing.T) {
 
 	cmd := exec.Command(binaryPath, "--", "sh", "-c", "echo nope")
 	cmd.Dir = sb.dir
-	cmd.Env = append(os.Environ(), "HOME="+sb.home, "SECRETS_PASSWORD=wrong-password")
+	cmd.Env = append(os.Environ(), "HOME="+sb.home, "KDBX_ENV_PASSWORD=wrong-password")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

@@ -1,4 +1,4 @@
-secrets
+kdbx-env
 *.kdbx
 tests/*
 !tests/.gitkeep

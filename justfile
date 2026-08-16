@@ -14,8 +14,8 @@ e2e-test mask="": build
     #!/usr/bin/env sh
     set -e
     mkdir -p {{tests_dir}}/_root
-    SECRETS_E2E_ROOT="$(pwd)/{{tests_dir}}/_root" \
-    SECRETS_E2E_KEEP=0 \
+    KDBX_ENV_E2E_ROOT="$(pwd)/{{tests_dir}}/_root" \
+    KDBX_ENV_E2E_KEEP=0 \
     go test -tags=e2e {{ if mask != "" { "-run " + mask } else { "" } }} ./...; \
     status=$?; \
     rm -rf {{tests_dir}}/_root; \

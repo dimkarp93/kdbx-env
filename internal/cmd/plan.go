@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	"secrets/internal/config"
-	"secrets/internal/domain"
+	"github.com/dimkarp93/kdbx-env/internal/config"
+	"github.com/dimkarp93/kdbx-env/internal/domain"
 )
 
 type envSecret struct {

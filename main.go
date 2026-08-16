@@ -1,6 +1,6 @@
 package main
 
-import "secrets/internal/cmd"
+import "github.com/dimkarp93/kdbx-env/internal/cmd"
 
 var version = "dev"
 

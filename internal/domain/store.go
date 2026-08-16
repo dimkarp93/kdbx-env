@@ -6,10 +6,10 @@ import (
 	"os"
 	"sort"
 
-	"secrets/internal/config"
-	"secrets/internal/keepass"
-	"secrets/internal/keyring"
-	"secrets/internal/term"
+	"github.com/dimkarp93/kdbx-env/internal/config"
+	"github.com/dimkarp93/kdbx-env/internal/keepass"
+	"github.com/dimkarp93/kdbx-env/internal/keyring"
+	"github.com/dimkarp93/kdbx-env/internal/term"
 )
 
 func fileExists(path string) bool {

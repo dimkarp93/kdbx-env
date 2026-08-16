@@ -7,10 +7,10 @@ import (
 	"path/filepath"
 	"sort"
 
-	"secrets/internal/config"
-	"secrets/internal/domain"
-	"secrets/internal/keepass"
-	"secrets/internal/keyring"
+	"github.com/dimkarp93/kdbx-env/internal/config"
+	"github.com/dimkarp93/kdbx-env/internal/domain"
+	"github.com/dimkarp93/kdbx-env/internal/keepass"
+	"github.com/dimkarp93/kdbx-env/internal/keyring"
 )
 
 func cmdRun(flags runFlags, child []string) int {
