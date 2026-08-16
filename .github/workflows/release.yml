@@ -19,12 +19,12 @@ jobs:
         id: ver
         run: |
           if [ ! -f versions.txt ]; then
-            echo "versions.txt не найден" >&2
+            echo "versions.txt not found" >&2
             exit 1
           fi
           v=$(tr -d '[:space:]' < versions.txt)
           if ! echo "$v" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "versions.txt должен содержать semver X.Y.Z (получено: '$v')" >&2
+            echo "versions.txt must contain semver X.Y.Z (got: '$v')" >&2
             exit 1
           fi
           bin="${{ github.event.repository.name }}"
@@ -36,7 +36,7 @@ jobs:
         id: tagcheck
         run: |
           if git rev-parse "refs/tags/${{ steps.ver.outputs.tag }}" >/dev/null 2>&1; then
-            echo "Тег ${{ steps.ver.outputs.tag }} уже существует — пропускаем релиз"
+            echo "Tag ${{ steps.ver.outputs.tag }} already exists, skipping release"
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
@@ -85,5 +85,5 @@ jobs:
           gh release create "${{ steps.ver.outputs.tag }}" \
             --title "${{ steps.ver.outputs.tag }}" \
             --target "${{ github.sha }}" \
-            --notes "Автоматический релиз ${{ steps.ver.outputs.tag }} из versions.txt" \
+            --notes "Automated release ${{ steps.ver.outputs.tag }} from versions.txt" \
             dist/*

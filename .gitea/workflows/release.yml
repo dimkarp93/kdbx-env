@@ -31,12 +31,12 @@ jobs:
         run: |
           set -eu
           if [ ! -f versions.txt ]; then
-            echo "versions.txt не найден" >&2
+            echo "versions.txt not found" >&2
             exit 1
           fi
           v=$(tr -d '[:space:]' < versions.txt)
           if ! echo "$v" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "versions.txt должен содержать semver X.Y.Z (получено: '$v')" >&2
+            echo "versions.txt must contain semver X.Y.Z (got: '$v')" >&2
             exit 1
           fi
           bin="${REPOSITORY##*/}"
@@ -51,7 +51,7 @@ jobs:
         run: |
           set -eu
           if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
-            echo "Тег ${TAG} уже существует — пропускаем релиз"
+            echo "Tag ${TAG} already exists, skipping release"
             echo "exists=true" >> "$GITEA_OUTPUT"
           else
             echo "exists=false" >> "$GITEA_OUTPUT"
@@ -62,7 +62,7 @@ jobs:
         run: |
           set -eu
           if [ ! -f go.mod ]; then
-            echo "go.mod не найден" >&2
+            echo "go.mod not found" >&2
             exit 1
           fi
           gv=$(awk '/^toolchain /{print $2; exit}' go.mod | sed 's/^go//')
@@ -70,7 +70,7 @@ jobs:
             gv=$(awk '/^go /{print $2; exit}' go.mod)
           fi
           if [ -z "$gv" ]; then
-            echo "не удалось определить версию Go из go.mod" >&2
+            echo "failed to detect Go version from go.mod" >&2
             exit 1
           fi
           case "$gv" in
@@ -86,7 +86,7 @@ jobs:
           case "$(uname -m)" in
             x86_64|amd64)  arch=amd64 ;;
             aarch64|arm64) arch=arm64 ;;
-            *) echo "неподдерживаемая архитектура раннера: $(uname -m)" >&2; exit 1 ;;
+            *) echo "unsupported runner architecture: $(uname -m)" >&2; exit 1 ;;
           esac
           root="$HOME/.local"
           mkdir -p "$root"
@@ -137,7 +137,7 @@ jobs:
         run: |
           set -eu
           api="${SERVER_URL}/api/v1/repos/${REPOSITORY}"
-          body=$(printf '{"tag_name":"%s","target_commitish":"%s","name":"%s","body":"Автоматический релиз %s из versions.txt"}' \
+          body=$(printf '{"tag_name":"%s","target_commitish":"%s","name":"%s","body":"Automated release %s from versions.txt"}' \
             "$TAG" "$SHA" "$TAG" "$TAG")
           resp=$(curl -fsS -X POST "${api}/releases" \
             -H "Authorization: token ${TOKEN}" \
@@ -149,13 +149,13 @@ jobs:
             id=$(printf '%s' "$resp" | grep -o '"id":[[:space:]]*[0-9]*' | head -n1 | tr -dc '0-9')
           fi
           if [ -z "$id" ]; then
-            echo "не удалось получить id релиза из ответа Gitea: $resp" >&2
+            echo "failed to get release id from Gitea response: $resp" >&2
             exit 1
           fi
           for f in dist/*; do
-            echo "Загружаю $(basename "$f")"
+            echo "Uploading $(basename "$f")"
             curl -fsS -X POST "${api}/releases/${id}/assets?name=$(basename "$f")" \
               -H "Authorization: token ${TOKEN}" \
               -F "attachment=@${f}" >/dev/null
           done
-          echo "Релиз ${TAG} создан"
+          echo "Release ${TAG} created"
