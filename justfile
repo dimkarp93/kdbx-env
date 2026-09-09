@@ -5,7 +5,22 @@ _default:
     @just --list
 
 build:
-    @./build.sh
+    #!/usr/bin/env sh
+    set -eu
+    v=$(tr -d '[:space:]' < {{version_file}})
+    u=$(git remote get-url origin 2>/dev/null || true)
+    case "$u" in
+        "")    o=local ;;
+        *://*) h=${u#*://}; h=${h#*@}; o="https://${h%.git}" ;;
+        *:*)   h=${u#*@};   o="https://$(printf '%s' "${h%.git}" | tr ':' '/')" ;;
+        *)     o=local ;;
+    esac
+    if [ -f upstream.txt ]; then up=$(tr -d '[:space:]' < upstream.txt); else up="$o"; fi
+    c=$(git rev-parse --short HEAD 2>/dev/null || true)
+    CGO_ENABLED=0 go build -trimpath \
+        -ldflags="-s -w -X main.version=$v -X main.origin=$o -X main.upstream=$up -X main.commit=$c -X main.channel=local" \
+        -o kdbx-env .
+    echo "Built: ./kdbx-env (v$v)"
 
 unit-test mask="":
     go test {{ if mask != "" { "-run " + mask } else { "" } }} ./...
@@ -28,27 +43,32 @@ clear-tests:
     @touch {{tests_dir}}/.gitkeep
     @echo "Cleared {{tests_dir}}/"
 
-bump-version:
+bump-patch:
     #!/usr/bin/env sh
-    set -e
-    if [ ! -f {{version_file}} ]; then echo "{{version_file}} not found"; exit 1; fi
-    cur=$(tr -d '[:space:]' < {{version_file}})
-    if ! echo "$cur" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-      echo "{{version_file}} must contain semver MAJOR.MINOR.PATCH (got: '$cur')"; exit 1
-    fi
-    M=${cur%%.*}; rest=${cur#*.}; m=${rest%%.*}; p=${rest#*.}
-    echo "Current version: $cur"
-    while true; do
-      printf "Bump which? b/major, m/minor, s/patch: "
-      read kind
-      case "$kind" in
-        b|major) M=$((M+1)); m=0; p=0; break ;;
-        m|minor) m=$((m+1)); p=0; break ;;
-        s|patch) p=$((p+1)); break ;;
-        "")      echo "  (no input, try again)" ;;
-        *)       echo "  invalid: $kind — expected b/m/s or major/minor/patch" ;;
-      esac
-    done
-    new="$M.$m.$p"
-    echo "$new" > {{version_file}}
-    echo "Updated {{version_file}}: $cur -> $new"
+    set -eu
+    v=$(tr -d '[:space:]' < {{version_file}})
+    IFS=. read -r MAJ MIN PAT <<EOF
+    $v
+    EOF
+    printf '%s.%s.%s\n' "$MAJ" "$MIN" "$((PAT + 1))" > {{version_file}}
+    cat {{version_file}}
+
+bump-minor:
+    #!/usr/bin/env sh
+    set -eu
+    v=$(tr -d '[:space:]' < {{version_file}})
+    IFS=. read -r MAJ MIN PAT <<EOF
+    $v
+    EOF
+    printf '%s.%s.0\n' "$MAJ" "$((MIN + 1))" > {{version_file}}
+    cat {{version_file}}
+
+bump-major:
+    #!/usr/bin/env sh
+    set -eu
+    v=$(tr -d '[:space:]' < {{version_file}})
+    IFS=. read -r MAJ MIN PAT <<EOF
+    $v
+    EOF
+    printf '%s.0.0\n' "$((MAJ + 1))" > {{version_file}}
+    cat {{version_file}}

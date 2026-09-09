@@ -4,19 +4,22 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/dimkarp93/install-libs/buildinfo"
 )
 
-func Execute(version string) {
+func Execute(info buildinfo.Info) {
 	args := os.Args[1:]
 	if len(args) == 0 {
 		usage()
 		os.Exit(2)
 	}
 
-	switch args[0] {
-	case "version":
-		fmt.Println(version)
+	if info.Handle(args) {
 		return
+	}
+
+	switch args[0] {
 	case "help", "--help", "-h":
 		usage()
 		return
@@ -39,13 +42,6 @@ func Execute(version string) {
 	}
 
 	left, child, hasSep := splitArgs(args)
-
-	for _, a := range left {
-		if a == "--version" || a == "-v" {
-			fmt.Println(version)
-			return
-		}
-	}
 
 	if !hasSep {
 		fmt.Fprintln(os.Stderr, "missing -- separator before the command to run")
@@ -92,7 +88,7 @@ func usage() {
   kdbx-env check  [--config <path>] [-y]
   kdbx-env show   [--config <path>]
   kdbx-env forget [--config <path>]
-  kdbx-env version | --version | -v
+  kdbx-env version | --version | -v | --origin | --buildinfo
 
 Runs <cmd> with secrets from a .kdbx key-store injected as environment variables.
 Secrets never touch your shell history or disk.

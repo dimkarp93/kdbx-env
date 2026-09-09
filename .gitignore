@@ -2,3 +2,5 @@ kdbx-env
 *.kdbx
 tests/*
 !tests/.gitkeep
+go.work
+go.work.sum

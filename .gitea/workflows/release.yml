@@ -28,6 +28,8 @@ jobs:
         id: ver
         env:
           REPOSITORY: ${{ gitea.repository }}
+          PUBLIC_URL: ${{ gitea.server_url }}
+          SHA: ${{ gitea.sha }}
         run: |
           set -eu
           if [ ! -f versions.txt ]; then
@@ -40,9 +42,18 @@ jobs:
             exit 1
           fi
           bin="${REPOSITORY##*/}"
-          echo "version=$v" >> "$GITEA_OUTPUT"
-          echo "tag=v$v"    >> "$GITEA_OUTPUT"
-          echo "bin=$bin"   >> "$GITEA_OUTPUT"
+          origin="${PUBLIC_URL%/}/${REPOSITORY}"
+          if [ -f upstream.txt ]; then
+            upstream=$(tr -d '[:space:]' < upstream.txt)
+          else
+            upstream="$origin"
+          fi
+          echo "version=$v"          >> "$GITEA_OUTPUT"
+          echo "tag=v$v"             >> "$GITEA_OUTPUT"
+          echo "bin=$bin"            >> "$GITEA_OUTPUT"
+          echo "origin=$origin"      >> "$GITEA_OUTPUT"
+          echo "upstream=$upstream"  >> "$GITEA_OUTPUT"
+          echo "commit=$(printf '%s' "$SHA" | cut -c1-7)" >> "$GITEA_OUTPUT"
 
       - name: Check tag existence
         id: tagcheck
@@ -107,6 +118,10 @@ jobs:
         env:
           BIN: ${{ steps.ver.outputs.bin }}
           VERSION: ${{ steps.ver.outputs.version }}
+          ORIGIN: ${{ steps.ver.outputs.origin }}
+          UPSTREAM: ${{ steps.ver.outputs.upstream }}
+          COMMIT: ${{ steps.ver.outputs.commit }}
+          CHANNEL: gitea-release
         run: |
           set -eu
           mkdir -p dist
@@ -118,7 +133,7 @@ jobs:
             tmp=$(mktemp -d)
             CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" \
               go build -trimpath \
-                -ldflags="-s -w -X main.version=${VERSION}" \
+                -ldflags="-s -w -X main.version=${VERSION} -X main.origin=${ORIGIN} -X main.upstream=${UPSTREAM} -X main.commit=${COMMIT} -X main.channel=${CHANNEL}" \
                 -o "$tmp/${BIN}" .
             chmod +x "$tmp/${BIN}"
             tar -C "$tmp" -czf "$out" "${BIN}"
